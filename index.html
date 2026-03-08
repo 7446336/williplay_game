@@ -4,18 +4,18 @@
 <meta charset="UTF-8">
 <title>Arena Shooter: Epic Edition</title>
 <style>
-body { margin:0; background:#111; font-family:Arial; overflow:hidden; }
-canvas { display:block; margin:auto; background:#222; }
-#ui { position:absolute; top:10px; left:10px; color:white; }
-#healthbar { width:200px; height:20px; border:2px solid white; margin-bottom:5px; }
-#healthfill { width:100%; height:100%; background:red; }
-#score,#level { font-size:18px; margin-top:5px; }
-#levelComplete,#abilitySelect,#deathScreen {
-  position:absolute; color:white; text-align:center; display:none;
+body{margin:0;background:#111;font-family:Arial;overflow:hidden;}
+canvas{display:block;margin:auto;background:#222;}
+#ui{position:absolute;top:10px;left:10px;color:white;}
+#healthbar{width:200px;height:20px;border:2px solid white;margin-bottom:5px;}
+#healthfill{width:100%;height:100%;background:red;}
+#score,#level{font-size:18px;margin-top:5px;}
+#levelComplete,#deathScreen,#abilitySelect{
+  position:absolute;text-align:center;color:white;display:none;
 }
-#levelComplete { top:40%; left:50%; transform:translate(-50%,-50%); font-size:40px; }
-#abilitySelect { top:40%; left:50%; transform:translate(-50%,-50%); }
-button { padding:10px 15px; margin:5px; font-size:16px; }
+#levelComplete{top:40%;left:50%;transform:translate(-50%,-50%);font-size:40px;}
+#abilitySelect{top:40%;left:50%;transform:translate(-50%,-50%);}
+button{padding:10px 15px;margin:5px;font-size:16px;}
 </style>
 </head>
 <body>
@@ -23,94 +23,92 @@ button { padding:10px 15px; margin:5px; font-size:16px; }
 <canvas id="game" width="900" height="600"></canvas>
 
 <div id="ui">
-  <div id="healthbar"><div id="healthfill"></div></div>
-  <div id="score">Score: 0</div>
-  <div id="level">Level: 1</div>
+<div id="healthbar"><div id="healthfill"></div></div>
+<div id="score">Score: 0</div>
+<div id="level">Level: 1</div>
 </div>
 
 <div id="levelComplete">LEVEL COMPLETE</div>
 
 <div id="abilitySelect">
-  <h2>Choose Ability</h2>
-  <div id="abilityButtons"></div>
+<h2>Choose Ability</h2>
+<div id="abilityButtons"></div>
 </div>
 
 <div id="deathScreen">
-  <h1>You Died</h1>
-  <input id="nameInput" placeholder="Name 3-15 chars"><br><br>
-  <button onclick="saveScore()">Save Score</button>
-  <button onclick="skipName()">No</button>
-  <div id="afterButtons" style="display:none">
-    <button onclick="restart()">Restart</button>
-    <button onclick="showLeaderboard()">Leaderboards</button>
-  </div>
-  <div id="leaderboard"></div>
+<h1>You Died</h1>
+<input id="nameInput" placeholder="Name 3-15 chars"><br><br>
+<button onclick="saveScore()">Save Score</button>
+<button onclick="skipName()">No</button>
+<div id="afterButtons" style="display:none">
+<button onclick="restart()">Restart</button>
+<button onclick="showLeaderboard()">Leaderboards</button>
+</div>
+<div id="leaderboard"></div>
 </div>
 
 <script>
 // --- Setup ---
-const canvas = document.getElementById("game");
-const ctx = canvas.getContext("2d");
-
-let keys = {};
-document.addEventListener("keydown", e => keys[e.key.toLowerCase()] = true);
-document.addEventListener("keyup", e => keys[e.key.toLowerCase()] = false);
-
-let mouse = {x:0,y:0,down:false};
-canvas.addEventListener("mousemove", e => {
-  const rect = canvas.getBoundingClientRect();
-  mouse.x = e.clientX - rect.left;
-  mouse.y = e.clientY - rect.top;
+const canvas=document.getElementById("game");
+const ctx=canvas.getContext("2d");
+let keys={}, mouse={x:0,y:0,down:false};
+document.addEventListener("keydown",e=>keys[e.key.toLowerCase()]=true);
+document.addEventListener("keyup",e=>keys[e.key.toLowerCase()]=false);
+canvas.addEventListener("mousemove",e=>{
+  const rect=canvas.getBoundingClientRect();
+  mouse.x=e.clientX-rect.left;
+  mouse.y=e.clientY-rect.top;
 });
-canvas.addEventListener("mousedown", ()=>mouse.down=true);
-canvas.addEventListener("mouseup", ()=>mouse.down=false);
+canvas.addEventListener("mousedown",()=>mouse.down=true);
+canvas.addEventListener("mouseup",()=>mouse.down=false);
 
-// --- Player & Game ---
-let player = {x:450, y:300, r:18, speed:3, health:100, maxHealth:100, damage:10, score:0};
-let bullets = [], enemies = [], level=1, waveSize=5, waiting=false;
-let shootCooldown=200, shootTimer=0;
-let choosingAbility=false;
+// --- Player ---
+let player={x:450,y:300,r:18,speed:3,health:100,maxHealth:100,damage:10,score:0,effects:[]};
+let bullets=[],enemies=[],spikes=[],particles=[];
+let level=1,waveSize=5,enemyHPMultiplier=1;
+let shootCooldown=100,shootTimer=0,canShoot=true;
+let choosingAbility=false,waiting=false;
+let autoShootInterval=null;
 
 // --- Abilities ---
-const abilities = [
-  {name:"Extra Damage",desc:"+3 Damage",effect:()=>player.damage+=3,color:"white"},
-  {name:"Speed Boost",desc:"+1 Speed",effect:()=>player.speed+=1,color:"white"},
-  {name:"Extra Health",desc:"+10 Max Health",effect:()=>{player.maxHealth+=10; player.health+=10},color:"white"},
-  {name:"Rapid Fire",desc:"Shoot faster",effect:()=>shootCooldown=100,color:"white"}
+const abilities=[
+{name:"Extra Damage",rarity:"Normal",desc:"+3 Damage",effect:()=>player.damage+=3,color:"white"},
+{name:"Speed Boost",rarity:"Normal",desc:"+1 Speed",effect:()=>player.speed=Math.min(player.speed+1,20),color:"white"},
+{name:"Extra Health",rarity:"Normal",desc:"+10 Max Health",effect:()=>{player.maxHealth+=10; player.health+=10},color:"white"},
+{name:"Burning Bullets",rarity:"Normal",desc:"Bullets burn enemies",effect:()=>player.effects.push("burn"),color:"white"},
+{name:"Slow Enemies",rarity:"Normal",desc:"Enemies slow 3 sec",effect:()=>player.effects.push("slow"),color:"white"},
+{name:"Rapid Fire",rarity:"Normal",desc:"Shoot faster",effect:()=>shootCooldown=50,color:"white"},
+// Rare
+{name:"Rare Damage",rarity:"Rare",desc:"+6 Damage",effect:()=>player.damage+=6,color:"orange"},
+{name:"Rare Speed",rarity:"Rare",desc:"+2 Speed",effect:()=>player.speed=Math.min(player.speed+2,20),color:"orange"},
+{name:"Rare Health",rarity:"Rare",desc:"+20 Max Health",effect:()=>{player.maxHealth+=20;player.health+=20},color:"orange"},
+// Mystic
+{name:"Mystic Damage",rarity:"Mystic",desc:"+12 Damage",effect:()=>player.damage+=12,color:"purple"},
+{name:"Mystic Speed",rarity:"Mystic",desc:"+3 Speed",effect:()=>player.speed=Math.min(player.speed+3,20),color:"purple"},
+// Divine
+{name:"Divine Damage",rarity:"Divine",desc:"+25 Damage",effect:()=>player.damage+=25,color:"cyan"},
+{name:"Divine Speed",rarity:"Divine",desc:"+5 Speed",effect:()=>player.speed=Math.min(player.speed+5,20),color:"cyan"}
 ];
 
-// --- Shooting ---
-function shootBullet() {
-  if(choosingAbility || shootTimer>0) return;
-  const angle = Math.atan2(mouse.y - player.y, mouse.x - player.x);
-  bullets.push({x:player.x,y:player.y,angle:angle,speed:7,damage:player.damage});
-  shootTimer = shootCooldown;
-}
-
-// --- Spawn Enemies ---
-function spawnEnemy() {
-  let x=Math.random()*canvas.width, y=Math.random()*canvas.height;
-  enemies.push({x,y,r:15,hp:30+level*5,speed:1.5});
-}
-function spawnWave() {
-  for(let i=0;i<waveSize;i++) spawnEnemy();
-}
-
-// --- Abilities Selection ---
-function chooseAbility() {
+// --- Functions ---
+function chooseAbility(){
   choosingAbility=true;
-  const abilityDiv = document.getElementById("abilitySelect");
-  const buttonsDiv = document.getElementById("abilityButtons");
-  abilityDiv.style.display="block";
-  buttonsDiv.innerHTML="";
-  const options=[abilities[Math.floor(Math.random()*abilities.length)],
-                 abilities[Math.floor(Math.random()*abilities.length)],
-                 abilities[Math.floor(Math.random()*abilities.length)]];
+  const abilityDiv=document.getElementById("abilitySelect");
+  const buttonsDiv=document.getElementById("abilityButtons");
+  abilityDiv.style.display="block"; buttonsDiv.innerHTML="";
+  function getAbilityByRarity(){
+    let r=Math.random()*100;
+    if(r<55) return abilities.filter(a=>a.rarity==="Normal")[Math.floor(Math.random()*5)];
+    if(r<85) return abilities.filter(a=>a.rarity==="Rare")[Math.floor(Math.random()*3)];
+    if(r<95) return abilities.filter(a=>a.rarity==="Mystic")[Math.floor(Math.random()*2)];
+    return abilities.filter(a=>a.rarity==="Divine")[0];
+  }
+  let options=[getAbilityByRarity(),getAbilityByRarity(),getAbilityByRarity()];
   options.forEach(a=>{
-    const btn = document.createElement("button");
-    btn.textContent = `${a.name}: ${a.desc}`;
-    btn.style.color = a.color;
-    btn.onclick = ()=>{
+    let btn=document.createElement("button");
+    btn.textContent=`${a.rarity} - ${a.name}: ${a.desc}`;
+    btn.style.color=a.color;
+    btn.onclick=()=>{
       a.effect();
       abilityDiv.style.display="none";
       choosingAbility=false;
@@ -119,23 +117,42 @@ function chooseAbility() {
   });
 }
 
-// --- Update ---
-function update() {
-  if(player.health<=0) return;
-  shootTimer-=16;
+function spawnEnemy(boss=false){
+  let x=Math.random()*canvas.width;
+  let y=Math.random()*canvas.height;
+  let hp=(30+level*5)*enemyHPMultiplier;
+  let r=15,speed=1.5,spikeTimer=0;
+  if(boss){hp*=60;r=40;speed=1;spikeTimer=90;}
+  enemies.push({x,y,hp,r,speed,boss,originalSpeed:speed,burnTimer:0,slowTimer:0,spikeTimer});
+}
 
-  if(keys["w"]) player.y-=player.speed;
-  if(keys["s"]) player.y+=player.speed;
-  if(keys["a"]) player.x-=player.speed;
-  if(keys["d"]) player.x+=player.speed;
+function spawnWave(){
+  if(level%10===0) spawnEnemy(true);
+  else for(let i=0;i<waveSize;i++) spawnEnemy();
+}
+
+function shootBullet(){
+  if(choosingAbility || !canShoot) return;
+  canShoot=false; shootTimer=shootCooldown;
+  let angle=Math.atan2(mouse.y-player.y,mouse.x-player.x);
+  bullets.push({x:player.x,y:player.y,angle:angle,speed:7,damage:player.damage});
+}
+
+function update(){
+  if(player.health<=0) return;
+
+  if(!canShoot){shootTimer-=16;if(shootTimer<=0) canShoot=true;}
+
+  if(!choosingAbility){
+    if(keys["w"]) player.y-=player.speed;
+    if(keys["s"]) player.y+=player.speed;
+    if(keys["a"]) player.x-=player.speed;
+    if(keys["d"]) player.x+=player.speed;
+  }
 
   player.x=Math.max(player.r,Math.min(canvas.width-player.r,player.x));
   player.y=Math.max(player.r,Math.min(canvas.height-player.r,player.y));
 
-  // Shooting
-  if(mouse.down) shootBullet();
-
-  // Bullets
   bullets.forEach((b,i)=>{
     b.x+=Math.cos(b.angle)*b.speed;
     b.y+=Math.sin(b.angle)*b.speed;
@@ -148,77 +165,62 @@ function update() {
     if(b.x<0||b.x>canvas.width||b.y<0||b.y>canvas.height) bullets.splice(i,1);
   });
 
-  // Enemies
   for(let i=enemies.length-1;i>=0;i--){
     let e=enemies[i];
     let dx=player.x-e.x, dy=player.y-e.y, dist=Math.hypot(dx,dy);
     e.x+=dx/dist*e.speed;
     e.y+=dy/dist*e.speed;
-    if(dist<player.r+e.r) player.health-=0.5;
-    if(e.hp<=0){enemies.splice(i,1); player.score++;}
+    if(dist<player.r+e.r) player.health-=0.3;
+
+    if(e.hp<=0){player.score++;enemies.splice(i,1);}
   }
 
-  // Level complete
   if(enemies.length===0 && !waiting){
     waiting=true;
     document.getElementById("levelComplete").style.display="block";
     setTimeout(()=>{
       document.getElementById("levelComplete").style.display="none";
       chooseAbility();
-      level++; waveSize+=2;
+      level++; waveSize+=2; enemyHPMultiplier*=1.1;
       spawnWave();
       waiting=false;
-    },1000);
+    },2000);
   }
 
+  document.getElementById("healthfill").style.width=(player.health/player.maxHealth*100)+"%";
   document.getElementById("score").textContent="Score: "+player.score;
   document.getElementById("level").textContent="Level: "+level;
-  document.getElementById("healthfill").style.width=(player.health/player.maxHealth*100)+"%";
+
+  if(player.health<=0) document.getElementById("deathScreen").style.display="block";
 }
 
-// --- Draw ---
-function draw() {
+function draw(){
   ctx.clearRect(0,0,canvas.width,canvas.height);
-  // Player
-  ctx.fillStyle="blue";
-  ctx.beginPath();
-  ctx.arc(player.x,player.y,player.r,0,Math.PI*2);
-  ctx.fill();
-  // Bullets
-  bullets.forEach(b=>{
-    ctx.fillStyle="yellow";
-    ctx.beginPath();
-    ctx.arc(b.x,b.y,4,0,Math.PI*2);
-    ctx.fill();
-  });
-  // Enemies
-  enemies.forEach(e=>{
-    ctx.fillStyle="red";
-    ctx.beginPath();
-    ctx.arc(e.x,e.y,e.r,0,Math.PI*2);
-    ctx.fill();
-  });
+  bullets.forEach(b=>{ctx.fillStyle="yellow"; ctx.beginPath(); ctx.arc(b.x,b.y,4,0,Math.PI*2); ctx.fill();});
+  ctx.fillStyle="blue"; ctx.beginPath(); ctx.arc(player.x,player.y,player.r,0,Math.PI*2); ctx.fill();
+  enemies.forEach(e=>{ctx.fillStyle=e.boss?"purple":"red"; ctx.beginPath(); ctx.arc(e.x,e.y,e.r,0,Math.PI*2); ctx.fill();});
+  // diagonal leaderboard
+  let board=JSON.parse(localStorage.getItem("leaderboard")||"[]").slice(0,10);
+  ctx.font="16px Arial"; ctx.fillStyle="white";
+  for(let i=0;i<board.length;i++){
+    ctx.fillText(`${i+1}. ${board[i].name} - ${board[i].score}`,canvas.width-200+i*10,30+i*20);
+  }
 }
 
-// --- Game Loop ---
-function gameLoop() {
-  update();
-  draw();
-  requestAnimationFrame(gameLoop);
-}
+function gameLoop(){update();draw();requestAnimationFrame(gameLoop);}
 
-// --- Leaderboard ---
-function saveScore() {
-  const name = document.getElementById("nameInput").value;
+function saveScore(){
+  let name=document.getElementById("nameInput").value;
   if(name.length<3||name.length>15){alert("3-15 chars"); return;}
-  let board = JSON.parse(localStorage.getItem("leaderboard")||"[]");
+  let board=JSON.parse(localStorage.getItem("leaderboard")||"[]");
   board.push({name,score:player.score});
   board.sort((a,b)=>b.score-a.score);
   localStorage.setItem("leaderboard",JSON.stringify(board.slice(0,10)));
   restart();
 }
+
 function skipName(){document.getElementById("deathScreen").style.display="none"; restart();}
-function restart(){player={x:450,y:300,r:18,speed:3,health:100,maxHealth:100,damage:10,score:0};level=1;waveSize=5;enemies=[];bullets=[];spawnWave();}
+function restart(){player={x:450,y:300,r:18,speed:3,health:100,maxHealth:100,damage:10,score:0,effects:[]};level=1;waveSize=5;enemyHPMultiplier=1;enemies=[];bullets=[];spawnWave();}
 
 spawnWave();
 gameLoop();
